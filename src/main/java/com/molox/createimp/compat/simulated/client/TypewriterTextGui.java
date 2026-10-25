@@ -35,12 +35,21 @@ public final class TypewriterTextGui {
     }
 
     public static void render(GuiGraphics graphics, int x, int y, String text) {
+        render(graphics, x, y, text, 0);
+    }
+
+    /** Renders a scrolled entry while keeping its inner text scissor in screen coordinates. */
+    public static void renderScrolled(GuiGraphics graphics, int x, int y, String text, int screenOffsetY) {
+        render(graphics, x, y, text, screenOffsetY);
+    }
+
+    private static void render(GuiGraphics graphics, int x, int y, String text, int screenOffsetY) {
         if (text == null || text.isEmpty()) return;
         graphics.blit(TEXTURE, x, y, 0, 0, 36, 18, 36, 18);
         Font font = Minecraft.getInstance().font;
         int areaX = x + 3;
         int areaY = y + 2;
-        graphics.enableScissor(areaX, areaY, areaX + WIDTH, areaY + HEIGHT);
+        graphics.enableScissor(areaX, areaY + screenOffsetY, areaX + WIDTH, areaY + HEIGHT + screenOffsetY);
         int textWidth = font.width(text);
         int textY = areaY + (HEIGHT - font.lineHeight) / 2;
         if (textWidth <= WIDTH) {

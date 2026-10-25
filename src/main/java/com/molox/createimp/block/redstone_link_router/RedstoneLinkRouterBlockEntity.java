@@ -4,6 +4,7 @@ import com.mojang.serialization.Codec;
 import com.molox.createimp.block.labeled_redstone_link.LabeledRedstoneLinkNetworkHandler;
 import com.molox.createimp.compat.sable.SableCompat;
 import com.simibubi.create.Create;
+import com.simibubi.create.content.equipment.clipboard.ClipboardCloneable;
 import com.simibubi.create.content.redstone.link.IRedstoneLinkable;
 import com.simibubi.create.content.redstone.link.RedstoneLinkNetworkHandler;
 import com.simibubi.create.foundation.blockEntity.SmartBlockEntity;
@@ -11,8 +12,10 @@ import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour
 import net.createmod.catnip.codecs.CatnipCodecUtils;
 import net.createmod.catnip.data.Couple;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
@@ -31,7 +34,7 @@ import java.util.Set;
  * 打开界面时客户端直接读取这里的数据初始化。注意本类完全不引用任何客户端专属类型，
  * 双端都能正常加载。
  */
-public class RedstoneLinkRouterBlockEntity extends SmartBlockEntity {
+public class RedstoneLinkRouterBlockEntity extends SmartBlockEntity implements ClipboardCloneable {
 
     private static final Codec<List<List<RedstoneLinkRouterComponentData>>> ROWS_CODEC =
             RedstoneLinkRouterComponentData.CODEC.listOf().listOf();
@@ -309,6 +312,7 @@ public class RedstoneLinkRouterBlockEntity extends SmartBlockEntity {
         for (List<RedstoneLinkRouterComponentData> row : newRows) {
             rows.add(new ArrayList<>(row));
         }
+        setChanged();
         notifyUpdate();
     }
 
@@ -326,6 +330,7 @@ public class RedstoneLinkRouterBlockEntity extends SmartBlockEntity {
         row.set(slotIndex, new RedstoneLinkRouterComponentData(
                 old.type(), old.notMarked(), item1.copy(), item2.copy(), old.labelText(),
                 old.inputConnections(), old.outputConnections()));
+        setChanged();
         notifyUpdate();
     }
 
@@ -339,6 +344,7 @@ public class RedstoneLinkRouterBlockEntity extends SmartBlockEntity {
         row.set(slotIndex, new RedstoneLinkRouterComponentData(
                 old.type(), old.notMarked(), old.itemSlot1(), old.itemSlot2(), text,
                 old.inputConnections(), old.outputConnections()));
+        setChanged();
         notifyUpdate();
     }
 
@@ -363,11 +369,43 @@ public class RedstoneLinkRouterBlockEntity extends SmartBlockEntity {
         return tag;
     }
 
+    // ========== Create ClipboardCloneable ==========
+
+    @Override
+    public String getClipboardKey() {
+        return "createimp_redstone_link_router";
+    }
+
+    @Override
+    public boolean writeToClipboard(HolderLookup.Provider registries, CompoundTag tag, Direction side) {
+        CompoundTag configuration = encodeRowsToTag(registries, rows);
+        if (!configuration.contains("Rows")) return false;
+        tag.merge(configuration);
+        return true;
+    }
+
+    @Override
+    public boolean readFromClipboard(HolderLookup.Provider registries, CompoundTag tag,
+                                     Player player, Direction side, boolean simulate) {
+        if (!tag.contains("Rows")) return false;
+        if (simulate) return true;
+        loadRowsFromTag(tag, registries);
+        setChanged();
+        return true;
+    }
+
+    @Override
+    public void writeSafe(CompoundTag tag, HolderLookup.Provider registries) {
+        super.writeSafe(tag, registries);
+        CatnipCodecUtils.encode(ROWS_CODEC, registries, rows).ifPresent(encoded -> tag.put("Rows", encoded));
+    }
+
     @Override
     protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
         super.read(tag, registries, clientPacket);
         rows.clear();
-        if (tag.contains("Rows")) {
+        boolean hasRows = tag.contains("Rows");
+        if (hasRows) {
             CatnipCodecUtils.decode(ROWS_CODEC, registries, tag.get("Rows"))
                     .ifPresent(decoded -> {
                         for (List<RedstoneLinkRouterComponentData> row : decoded) {

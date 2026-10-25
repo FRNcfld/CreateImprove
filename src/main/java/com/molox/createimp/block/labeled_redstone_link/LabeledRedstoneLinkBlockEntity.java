@@ -46,6 +46,8 @@ public class LabeledRedstoneLinkBlockEntity extends SmartBlockEntity
     // 是通过非正常摆放的途径创建的（例如 /setblock 之类没有走 setPlacedBy 的场景），
     // 才会停留在这个占位值上。
     private String frequencyText = DEFAULT_FREQUENCY_EN;
+    /** 已从持久化数据读取过频率；蓝图打印会在 setPlacedBy 之后再次调用它，不能被默认值覆盖。 */
+    private boolean frequencyTextLoaded;
 
     // 对应原版的 transmittedSignal / receivedSignal / receivedSignalChanged
     private int transmittedSignal = 0;
@@ -78,6 +80,10 @@ public class LabeledRedstoneLinkBlockEntity extends SmartBlockEntity
 
     public String getFrequencyText() {
         return frequencyText;
+    }
+
+    boolean hasLoadedFrequencyText() {
+        return frequencyTextLoaded;
     }
 
     public void setFrequencyText(String text, @Nullable Player contextPlayer) {
@@ -209,6 +215,12 @@ public class LabeledRedstoneLinkBlockEntity extends SmartBlockEntity
     // ========== NBT ==========
 
     @Override
+    public void writeSafe(CompoundTag tag, HolderLookup.Provider registries) {
+        super.writeSafe(tag, registries);
+        tag.putString("FrequencyText", frequencyText);
+    }
+
+    @Override
     public void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
         super.write(tag, registries, clientPacket);
         tag.putString("FrequencyText", frequencyText);
@@ -220,6 +232,7 @@ public class LabeledRedstoneLinkBlockEntity extends SmartBlockEntity
     @Override
     public void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
         super.read(tag, registries, clientPacket);
+        frequencyTextLoaded = tag.contains("FrequencyText");
         frequencyText = tag.getString("FrequencyText");
         if (frequencyText.isBlank()) frequencyText = DEFAULT_FREQUENCY_EN;
         transmittedSignal = tag.getInt("TransmittedSignal");

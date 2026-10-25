@@ -22,19 +22,22 @@ public abstract class MixinSimulatedKeyEditorScreenText {
         LinkedTypewriterScreen screen = parentScreen;
         if (screen.modifier.modifying) return;
         int index = 0;
+        int rowX = screen.getLeftPos() + 12;
+        int baseRowY = screen.getTopPos() - 15;
+        int rowStep = dev.simulated_team.simulated.index.SimGUITextures.LINKED_TYPEWRITER_KEY_ENTRY.height + 3;
+        graphics.enableScissor(0, screen.getTopPos() - 20,
+                screen.width, screen.getTopPos() + 120);
+        graphics.pose().pushPose();
+        graphics.pose().translate(0, -lerpedScroll.getValue(partialTick), 300);
         for (LinkedTypewriterEntries.KeyboardEntry entry : screen.getNewEntries().getEntries()) {
             String text = TypewriterTextGui.text(screen, entry.glfwKeyCode);
             if (text != null && !text.isBlank()) {
-                int rowX = screen.getLeftPos() + 12;
-                int rowY = screen.getTopPos() - 15
-                        + index * (dev.simulated_team.simulated.index.SimGUITextures.LINKED_TYPEWRITER_KEY_ENTRY.height + 3)
-                        - (int) lerpedScroll.getValue(partialTick);
-                graphics.pose().pushPose();
-                graphics.pose().translate(0, 0, 300);
-                TypewriterTextGui.render(graphics, rowX + 81, rowY + 6, text);
-                graphics.pose().popPose();
+                TypewriterTextGui.renderScrolled(graphics, rowX + 81, baseRowY + index * rowStep + 6,
+                        text, (int) -lerpedScroll.getValue(partialTick));
             }
             index++;
         }
+        graphics.pose().popPose();
+        graphics.disableScissor();
     }
 }

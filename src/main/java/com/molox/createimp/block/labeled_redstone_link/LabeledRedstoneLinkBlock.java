@@ -61,6 +61,7 @@ public class LabeledRedstoneLinkBlock extends WrenchableDirectionalBlock
         super.setPlacedBy(level, pos, state, placer, stack);
         if (level.isClientSide()) return;
         if (!(level.getBlockEntity(pos) instanceof LabeledRedstoneLinkBlockEntity be)) return;
+        if (be.hasLoadedFrequencyText()) return;
         String defaultText = (placer instanceof ServerPlayer serverPlayer)
                 ? LabeledRedstoneLinkBlockEntity.defaultFrequencyFor(serverPlayer.getLanguage())
                 : LabeledRedstoneLinkBlockEntity.DEFAULT_FREQUENCY_EN;
