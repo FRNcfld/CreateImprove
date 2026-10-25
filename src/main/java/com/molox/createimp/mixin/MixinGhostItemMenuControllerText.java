@@ -1,6 +1,9 @@
 package com.molox.createimp.mixin;
 
 import com.molox.createimp.item.LinkedControllerTextFrequencies;
+import com.molox.createimp.compat.simulated.TypewriterTextAccess;
+import com.molox.createimp.compat.simulated.TypewriterEditState;
+import dev.simulated_team.simulated.content.blocks.redstone.linked_typewriter.screen.LinkedTypewriterMenuCommon;
 import com.simibubi.create.content.redstone.link.controller.LinkedControllerMenu;
 import com.simibubi.create.foundation.gui.menu.GhostItemMenu;
 import net.minecraft.world.entity.player.Player;
@@ -20,9 +23,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(GhostItemMenu.class)
 public abstract class MixinGhostItemMenuControllerText {
     private boolean createimp$locked(int ghostSlot) {
-        return (Object) this instanceof LinkedControllerMenu controller
-                && ghostSlot >= 0 && ghostSlot < 12
-                && LinkedControllerTextFrequencies.has(controller.contentHolder, ghostSlot / 2);
+        if ((Object) this instanceof LinkedControllerMenu controller) {
+            return ghostSlot >= 0 && ghostSlot < 12
+                    && LinkedControllerTextFrequencies.has(controller.contentHolder, ghostSlot / 2);
+        }
+        return (Object) this instanceof LinkedTypewriterMenuCommon typewriter
+                && ghostSlot >= 0 && ghostSlot < 2
+                && typewriter.contentHolder != null
+                && ((TypewriterTextAccess) typewriter.contentHolder).createimp$getTextBindings()
+                        .containsKey(((TypewriterEditState) typewriter).createimp$getEditingKey());
     }
 
     @Inject(method = "clicked", at = @At("HEAD"), cancellable = true)
@@ -33,11 +42,14 @@ public abstract class MixinGhostItemMenuControllerText {
 
     @Inject(method = "canDragTo", at = @At("HEAD"), cancellable = true)
     private void createimp$guardDrag(Slot slot, CallbackInfoReturnable<Boolean> cir) {
-        if ((Object) this instanceof LinkedControllerMenu controller) {
-            int ghostSlot = slot.getSlotIndex();
-            if (ghostSlot >= 0 && ghostSlot < 12 && controller.getSlot(36 + ghostSlot) == slot
-                    && createimp$locked(ghostSlot)) cir.setReturnValue(false);
-        }
+        int ghostSlot = slot.getSlotIndex();
+        if (ghostSlot < 0) return;
+        if ((Object) this instanceof LinkedControllerMenu controller
+                && ghostSlot < 12 && controller.getSlot(36 + ghostSlot) == slot
+                && createimp$locked(ghostSlot)) cir.setReturnValue(false);
+        if ((Object) this instanceof LinkedTypewriterMenuCommon typewriter
+                && ghostSlot < 2 && typewriter.getSlot(36 + ghostSlot) == slot
+                && createimp$locked(ghostSlot)) cir.setReturnValue(false);
     }
 
     @Inject(method = "quickMoveStack", at = @At("HEAD"), cancellable = true)

@@ -32,11 +32,16 @@
     "MixinRedstoneRequesterScreen",
     "MixinItemTunablePortableTickerAccess",
     "PhantomCategoryEntryAccessor",
-    "MixinTunablePortableTickerScreen"
+    "MixinTunablePortableTickerScreen",
+    "MixinSimulatedTypewriterBlockEntity",
+    "MixinSimulatedTypewriterMenu"
   ],
   "client": [
     "MixinAbstractSimiContainerScreenControllerText",
-    "MixinLinkedControllerTextScreen"
+    "MixinLinkedControllerTextScreen",
+    "MixinSimulatedTypewriterScreen",
+    "MixinSimulatedKeyWidgetText",
+    "MixinSimulatedKeyEditorScreenText"
   ],
   "injectors": {
     "defaultRequire": 1

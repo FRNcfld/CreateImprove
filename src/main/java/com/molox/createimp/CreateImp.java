@@ -40,6 +40,8 @@ import com.molox.createimp.network.SubmitBrassScrapBucketFilterPacket;
 import com.molox.createimp.network.SaveFactoryPanelDemandModePacket;
 import com.molox.createimp.network.SaveLabeledRedstoneLinkConfigPacket;
 import com.molox.createimp.network.SaveLinkedControllerTextPacket;
+import com.molox.createimp.network.SaveTypewriterTextBindingsPacket;
+import com.molox.createimp.network.SetTypewriterEditingKeyPacket;
 import com.molox.createimp.network.SaveNetworkManagerDataPacket;
 import com.molox.createimp.network.SaveNetworkManagerSearchPacket;
 import com.molox.createimp.network.SaveTemplatePanelDemandModePacket;
@@ -286,6 +288,16 @@ public class CreateImp {
                 SaveLinkedControllerTextPacket.TYPE,
                 SaveLinkedControllerTextPacket.STREAM_CODEC,
                 SaveLinkedControllerTextPacket::handle
+        );
+        registrar.playToServer(
+                SaveTypewriterTextBindingsPacket.TYPE,
+                SaveTypewriterTextBindingsPacket.STREAM_CODEC,
+                SaveTypewriterTextBindingsPacket::handle
+        );
+        registrar.playToServer(
+                SetTypewriterEditingKeyPacket.TYPE,
+                SetTypewriterEditingKeyPacket.STREAM_CODEC,
+                SetTypewriterEditingKeyPacket::handle
         );
         registrar.playToServer(
                 ApplyNetworkPacket.TYPE,
