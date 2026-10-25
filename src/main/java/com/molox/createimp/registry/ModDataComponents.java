@@ -17,6 +17,14 @@ public class ModDataComponents {
     public static final DeferredRegister<DataComponentType<?>> DATA_COMPONENTS =
             DeferredRegister.create(Registries.DATA_COMPONENT_TYPE, CreateImp.MODID);
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<List<String>>> LINKED_CONTROLLER_TEXT_FREQUENCIES =
+            DATA_COMPONENTS.register("linked_controller_text_frequencies", () ->
+                    DataComponentType.<List<String>>builder()
+                            .persistent(com.mojang.serialization.Codec.STRING.listOf())
+                            .networkSynchronized(ByteBufCodecs.STRING_UTF8.apply(ByteBufCodecs.list()))
+                            .build()
+            );
+
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<List<NetworkLabel>>> NETWORK_MANAGER_LABELS =
             DATA_COMPONENTS.register("network_manager_labels", () ->
                     DataComponentType.<List<NetworkLabel>>builder()

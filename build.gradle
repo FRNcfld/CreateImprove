@@ -27,7 +27,11 @@ sourceSets.main.resources {
 }
 
 repositories {
-    // Add here additional repositories if required by some of the dependencies below.
+    // AutoJS is only used in local development runs; Rhino is its required scripting engine.
+    maven { url = uri('https://maven.sighs.cc/repository/maven-public/') }
+    maven { url = uri('https://maven.latvian.dev/releases') }
+    // KubeJS 2101 declares animated-gif-lib-for-java, which is published through JitPack.
+    maven { url = uri('https://jitpack.io') }
 }
 
 base {
@@ -151,11 +155,21 @@ dependencies {
     compileOnly files("libs/create-1.21.1-6.0.10.jar")
 
     //-----------------------------运行模组-----------------------------------
-    localRuntime files("libs/sodium-neoforge-0.6.13+mc1.21.1.jar")
-    localRuntime files("libs/iris-neoforge-1.8.12+mc1.21.1.jar")
+    // Debug-only scripting bridge: never package or publish it with Create Improve.
+    localRuntime 'cc.sighs.autojs:AutoJS-neoforge-1.21.1:1.0.0'
+    // AutoJS declares Rhino as required, but its published POM has no transitive dependencies.
+    localRuntime 'dev.latvian.mods:rhino:2101.2.7-build.81'
+    // Optional AutoJS integration: adds KubeJS globals, event hooks, script reload and script logs.
+    localRuntime 'dev.latvian.mods:kubejs-neoforge:2101.7.2-build.379'
+    // Sodium 0.8 将启动兼容类和主实现拆分在 JarJar 内外；ModDev 无法正确组合二者，
+    // 因此开发运行环境使用由完整发行包生成的扁平化 jar。
+    localRuntime files("libs/sodium-neoforge-0.8.13-beta.2+mc1.21.1-moddev.jar")
+    localRuntime files("libs/iris-neoforge-1.8.14-beta.1+mc1.21.1.jar")
     localRuntime files("libs/irisveil-0.1.0.jar")
     localRuntime files("libs/colorwheel-neoforge-1.2.9+mc1.21.1.jar")
-    localRuntime files("libs/createbetterfps-1.21.1-1.1.4.jar")
+    // Sodium 0.8 的 JarJar 包在当前 NeoForge 开发环境中无法被 CreateBetterFps 识别为
+    // 可满足依赖；该纯性能优化模组不参与本模组功能验证，开发运行时暂不加载。
+    //localRuntime files("libs/createbetterfps-1.21.1-1.1.5.jar")
     localRuntime files("libs/Jade-1.21.1-NeoForge-15.10.5.jar")
     localRuntime files("libs/JadeAddons-1.21.1-NeoForge-6.1.0.jar")
     localRuntime files("libs/CopyID-neoforge-1.21.1-1.0.1.jar")
@@ -164,8 +178,8 @@ dependencies {
     localRuntime files("libs/ftb-ultimine-neoforge-2101.1.15.jar")
     localRuntime files("libs/ftb-library-neoforge-2101.1.33.jar")
     localRuntime files("libs/architectury-13.0.8-neoforge.jar")
-    //localRuntime files("libs/sable-neoforge-1.21.1-2.0.3.jar")
-    //localRuntime files("libs/create-aeronautics-bundled-1.21.1-1.3.0.jar")
+    localRuntime files("libs/sable-neoforge-1.21.1-2.0.3.jar")
+    localRuntime files("libs/create-aeronautics-bundled-1.21.1-1.3.0.jar")
 
 
     //-----------------------------兼容模组-----------------------------------
@@ -203,6 +217,9 @@ dependencies {
 // This block of code expands all declared replace properties in the specified resource targets.
 // A missing property will result in an error. Properties are expanded using ${} Groovy notation.
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
+    // The template contains Chinese metadata. Force UTF-8 rather than the Windows GBK default,
+    // otherwise NeoForge rejects the generated neoforge.mods.toml before this mod can load.
+    filteringCharset = 'UTF-8'
     var replaceProperties = [
             minecraft_version      : minecraft_version,
             minecraft_version_range: minecraft_version_range,

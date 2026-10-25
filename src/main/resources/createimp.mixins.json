@@ -6,6 +6,10 @@
   "mixins": [
     "MixinAbstractContainerMenu",
     "MixinClipboardScreen",
+    "MixinGhostItemMenuControllerText",
+    "MixinLinkedControllerInputText",
+    "MixinLinkedControllerBindText",
+    "MixinLinkedControllerServerTextTick",
     "MixinFactoryPanelBehaviour",
     "MixinFactoryPanelScreen",
     "AbstractSimiScreenAccessor",
@@ -30,7 +34,10 @@
     "PhantomCategoryEntryAccessor",
     "MixinTunablePortableTickerScreen"
   ],
-  "client": [],
+  "client": [
+    "MixinAbstractSimiContainerScreenControllerText",
+    "MixinLinkedControllerTextScreen"
+  ],
   "injectors": {
     "defaultRequire": 1
   }

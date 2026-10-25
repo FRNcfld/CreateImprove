@@ -39,6 +39,7 @@ import com.molox.createimp.network.SaveBrassScrapBucketConfigPacket;
 import com.molox.createimp.network.SubmitBrassScrapBucketFilterPacket;
 import com.molox.createimp.network.SaveFactoryPanelDemandModePacket;
 import com.molox.createimp.network.SaveLabeledRedstoneLinkConfigPacket;
+import com.molox.createimp.network.SaveLinkedControllerTextPacket;
 import com.molox.createimp.network.SaveNetworkManagerDataPacket;
 import com.molox.createimp.network.SaveNetworkManagerSearchPacket;
 import com.molox.createimp.network.SaveTemplatePanelDemandModePacket;
@@ -280,6 +281,11 @@ public class CreateImp {
                 SaveLabeledRedstoneLinkConfigPacket.TYPE,
                 SaveLabeledRedstoneLinkConfigPacket.STREAM_CODEC,
                 SaveLabeledRedstoneLinkConfigPacket::handle
+        );
+        registrar.playToServer(
+                SaveLinkedControllerTextPacket.TYPE,
+                SaveLinkedControllerTextPacket.STREAM_CODEC,
+                SaveLinkedControllerTextPacket::handle
         );
         registrar.playToServer(
                 ApplyNetworkPacket.TYPE,

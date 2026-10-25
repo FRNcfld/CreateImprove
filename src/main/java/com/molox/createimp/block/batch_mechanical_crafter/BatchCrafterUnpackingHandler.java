@@ -9,11 +9,13 @@ import com.simibubi.create.content.kinetics.crafter.MechanicalCraftingRecipe;
 import com.simibubi.create.content.logistics.packager.PackagerBlockEntity;
 import com.simibubi.create.content.logistics.stockTicker.PackageOrderWithCrafts;
 import com.simibubi.create.foundation.item.ItemHelper;
+import com.simibubi.create.infrastructure.config.AllConfigs;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ItemHandlerHelper;
@@ -62,6 +64,7 @@ public enum BatchCrafterUnpackingHandler implements UnpackingHandler {
 
         // 包裹只携带一个配方，直接取第一个（也是唯一一个）entry。
         PackageOrderWithCrafts.CraftingEntry entry = orderContext.orderedCrafts().get(0);
+        if (entry.count() <= 0) return;
         List<BigItemStack> pattern = entry.pattern().stacks();
 
         // 整条连接链上，任意一个格子只要phase不是IDLE，或者phase虽然是IDLE
@@ -83,29 +86,21 @@ public enum BatchCrafterUnpackingHandler implements UnpackingHandler {
             if (inv.getBlockEntity().phase != BatchMechanicalCrafterBlockEntity.Phase.IDLE) return;
             if (!inv.getItem(0).isEmpty()) return;
         }
-        // 赛博护目镜会将原版工厂仪表的宽×高扁平材料表原样写入包裹，订单中
-        // 没有宽高字段。先依据完整材料布局反查实际机械合成表；命中后按其
-        // 真实矩形尺寸摆放（例如2×8），而不是从列表长度猜边长。旧模板仪表/
-        // 额外仪表已经补齐为n×n方阵的订单不会匹配这种原始布局，继续沿用
-        // 既有方阵逻辑。
-        PatternLayout layout = findRawMechanicalCraftingLayout(level, pattern);
-        if (layout == null) {
-            int patternSide = (int) Math.round(Math.sqrt(pattern.size()));
-            if (patternSide <= 0 || patternSide * patternSide != pattern.size()) {
-                // 既不是可反查的原始机械合成表，也不是原有约定的方阵订单。
-                // 安全起见让包裹原样留在打包机中。
-                return;
-            }
-            layout = new PatternLayout(patternSide, patternSide);
-        }
+        // 订单只携带材料格位，不携带配方 ID、产物或宽高。按合成器实际允许的
+        // 普通/机械配方识别后，使用真实格位分配材料；无法唯一判定时保留包裹。
+        PatternLayout layout = findCraftingLayout(level, pattern);
+        if (layout == null) return;
+        List<BigItemStack> recipeSlots = layout.slots();
 
         // 不要求整条连接链条本身恰好等于配方尺寸——只需包含一块完整的
         // width×height矩形区域。这样既支持原来的方阵配方，也支持赛博护目镜
         // 传入的2×8、4×3等非正方形机械合成表。
         List<BatchMechanicalCrafterBlockEntity.Inventory> placement =
                 findRectanglePlacement(crafter, inventories, layout.width(), layout.height());
-        if (placement == null) {
-            return;
+        if (placement == null) return;
+        for (BatchMechanicalCrafterBlockEntity.Inventory inv : placement) {
+            // 有盖板的格子不能收货；在动包裹之前确认整个区域可用。
+            if (inv.getBlockEntity().covered) return;
         }
 
         // 取出包裹内容
@@ -116,10 +111,10 @@ public enum BatchCrafterUnpackingHandler implements UnpackingHandler {
             if (!s.isEmpty()) items.add(s.copy());
         }
 
-        // pattern中同一种物品可能出现在配方的多个格子（例如4铁锭围一圈合成铁块）。
+        // 配方格位中同一种物品可能多次出现；库存需要按物品类型合计。
         // 先按物品类型合并，得到每种材料"单批总需求"，用于库存量约束的计算。
         Map<ItemStack, Integer> perBatchNeedByItem = new LinkedHashMap<>();
-        for (BigItemStack slot : pattern) {
+        for (BigItemStack slot : recipeSlots) {
             if (slot.stack.isEmpty() || slot.count <= 0) continue;
             ItemStack key = null;
             for (ItemStack existingKey : perBatchNeedByItem.keySet()) {
@@ -137,14 +132,12 @@ public enum BatchCrafterUnpackingHandler implements UnpackingHandler {
 
         // 计算本次批次数：受最小堆叠上限、包裹里实际材料量两重约束。
         // 堆叠上限约束必须逐格独立计算（每个格子是独立槽位，各自上限64）。
-        int maxBatches = Integer.MAX_VALUE;
-        for (BigItemStack slot : pattern) {
+        int maxBatches = entry.count();
+        for (BigItemStack slot : recipeSlots) {
             if (slot.stack.isEmpty() || slot.count <= 0) continue;
-            int maxByStack = slot.stack.getMaxStackSize() / Math.max(slot.count, 1);
+            int maxByStack = Math.min(64, slot.stack.getMaxStackSize()) / slot.count;
             maxBatches = Math.min(maxBatches, maxByStack);
         }
-        if (maxBatches == Integer.MAX_VALUE) maxBatches = 1;
-        if (maxBatches <= 0) maxBatches = 1;
 
         // 库存量约束使用合并后的单批总需求，因为库存按物品类型统一计量，不分槽位。
         for (Map.Entry<ItemStack, Integer> e : perBatchNeedByItem.entrySet()) {
@@ -163,11 +156,11 @@ public enum BatchCrafterUnpackingHandler implements UnpackingHandler {
         // 分配材料到合成器槽位。
         // Inventory.insertItem 单槽一旦非空即整体拒绝任何后续插入（即使是同种物品），
         // 因此每个格子所需的数量必须先从items列表里凑齐成一份，再对该槽位调用一次insertItem。
-        // placement已经是findRectanglePlacement按行优先顺序选好的矩形子区域，
-        // 下标直接与pattern一一对应，不需要再换算行列号。
+        // placement 按配方的真实宽高选出矩形；recipeSlots 已按配方行优先排列。
         int totalInserted = 0;
-        for (int i = 0; i < pattern.size(); i++) {
-            BigItemStack slot = pattern.get(i);
+        BatchMechanicalCrafterBlockEntity triggerCrafter = null;
+        for (int i = 0; i < recipeSlots.size(); i++) {
+            BigItemStack slot = recipeSlots.get(i);
             if (slot.stack.isEmpty()) continue;
 
             int needed = slot.count * maxBatches;
@@ -193,6 +186,9 @@ public enum BatchCrafterUnpackingHandler implements UnpackingHandler {
             ItemStack leftover = targetInv.insertItem(0, combined, false);
             int inserted = collected - leftover.getCount();
             totalInserted += inserted;
+            if (inserted > 0 && triggerCrafter == null) {
+                triggerCrafter = targetInv.getBlockEntity();
+            }
 
             if (!leftover.isEmpty()) {
                 items.add(leftover);
@@ -202,12 +198,8 @@ public enum BatchCrafterUnpackingHandler implements UnpackingHandler {
         // 如果实际没有材料被放进去（合成器phase不是IDLE），包裹留着等待，不做后续处理
         if (totalInserted == 0) return;
 
-        // 触发合成检测必须从placement区域内、真正持有了材料的某一台合成器
-        // 发起，不能用packager相邻的crafter参数——findSquarePlacement允许
-        // 选中的区域落在链条里的任意位置，crafter自己完全可能落在这次选中
-        // 的区域之外、格子本身仍是空的，从一个空格子发起检测会导致检测不到
-        // 真正持有材料的那些格子，合成永远不会自动开始。
-        BatchMechanicalCrafterBlockEntity triggerCrafter = placement.get(0).getBlockEntity();
+        // 从实际收到材料的格子启动；配方左上角也可能是有效的空格。
+        // 包裹相邻的合成器也可能不在选中的矩形区域内。
         if (triggerCrafter.getSpeed() == 0f) {
             // checkCompletedRecipe(true)内部会因为getSpeed()==0直接返回、什么都不做，
             // 且不会留下任何"材料已就绪、等动力恢复后再试一次"的记录——如果这里不主动
@@ -245,47 +237,171 @@ public enum BatchCrafterUnpackingHandler implements UnpackingHandler {
             packager.animationTicks = 20;
             packager.notifyUpdate();
         } else {
-            // 包裹内容还没吃空：更新后的内容写回heldBox长期持有，
-            // 等待下次合成器槽位腾空时由tryProcessPackagerBox重新触发处理。
+            // 部分处理后同步减少订单剩余批次；否则剩余材料可能被重复合成。
+            PackageOrderWithCrafts remaining = new PackageOrderWithCrafts(
+                    orderContext.orderedStacks(),
+                    List.of(new PackageOrderWithCrafts.CraftingEntry(entry.pattern(), entry.count() - maxBatches)));
+            if (PackageItem.hasOrderData(box)) {
+                PackageItem.setOrder(box, PackageItem.getOrderId(box), PackageItem.getLinkIndex(box),
+                        PackageItem.isFinalLink(box), PackageItem.getIndex(box), PackageItem.isFinal(box), remaining);
+            } else {
+                PackageItem.addOrderContext(box, remaining);
+            }
+            // 包裹内容还没吃空：保留在 heldBox，等待合成器槽位清空。
             packager.heldBox = box;
             packager.notifyUpdate();
         }
     }
 
-    private static PatternLayout findRawMechanicalCraftingLayout(Level level, List<BigItemStack> pattern) {
-        for (RecipeHolder<?> holder : level.getRecipeManager()
-                .getAllRecipesFor(AllRecipeTypes.MECHANICAL_CRAFTING.getType())) {
-            if (!(holder.value() instanceof MechanicalCraftingRecipe recipe)) {
-                continue;
-            }
-            if (recipe.getWidth() * recipe.getHeight() != pattern.size()) {
-                continue;
-            }
-            if (matchesRawMechanicalCraftingPattern(recipe, pattern)) {
-                return new PatternLayout(recipe.getWidth(), recipe.getHeight());
+    private static @Nullable PatternLayout findCraftingLayout(Level level, List<BigItemStack> pattern) {
+        PatternLayout found = null;
+        RecipeHolder<?> matchedRecipe = null;
+        boolean matchedRegular = false;
+
+        // 普通配方与最终合成阶段使用同一套配置和自动化过滤规则。
+        // 订单可能是原始矩形，也可能已被补成九宫格；裁掉外围空格后交给
+        // RecipeManager 判定，包含有序、无序及其它实现 CraftingRecipe 的配方。
+        if (Boolean.TRUE.equals(AllConfigs.server().recipes.allowRegularCraftingInCrafter.get())) {
+            for (int width = 1; width <= 3; width++) {
+                for (int height = 1; height <= 3; height++) {
+                    if (width * height != pattern.size()) continue;
+                    PatternLayout candidate = trimRegularPattern(pattern, width, height);
+                    if (candidate == null) continue;
+                    List<ItemStack> inputSlots = new ArrayList<>(candidate.slots().size());
+                    for (BigItemStack slot : candidate.slots()) {
+                        inputSlots.add(slot.stack.isEmpty() ? ItemStack.EMPTY : slot.stack.copyWithCount(1));
+                    }
+                    BatchCraftingInput input = BatchCraftingInput.of(
+                            candidate.width(), candidate.height(), inputSlots);
+                    var recipe = level.getRecipeManager().getRecipeFor(RecipeType.CRAFTING, input, level)
+                            .filter(holder -> BatchRecipeGridHandler.isRecipeAllowed(holder, input));
+                    if (recipe.isEmpty()) continue;
+                    if (found != null && (!matchedRecipe.id().equals(recipe.get().id())
+                            || !samePlacement(found, candidate))) return null;
+                    found = candidate;
+                    matchedRecipe = recipe.get();
+                    matchedRegular = true;
+                }
             }
         }
-        return null;
+
+        for (RecipeHolder<?> holder : level.getRecipeManager()
+                .getAllRecipesFor(AllRecipeTypes.MECHANICAL_CRAFTING.getType())) {
+            if (!(holder.value() instanceof MechanicalCraftingRecipe recipe)) continue;
+            int width = recipe.getWidth(), height = recipe.getHeight();
+            if (width <= 0 || height <= 0 || recipe.getIngredients().size() != width * height) continue;
+
+            // 原始矩形、模板仪表左上对齐的方阵，以及 Create 的九宫格转换。
+            // 每一种编码都生成“编码位置 -> 原配方位置”的映射；只有完整的空格和
+            // 非空格都吻合，才可以用该配方真实的矩形格位重新摆放。
+            List<List<Integer>> encodings = new ArrayList<>();
+            List<Integer> raw = new ArrayList<>(width * height);
+            for (int i = 0; i < width * height; i++) raw.add(i);
+            encodings.add(raw);
+
+            int side = Math.max(width, height);
+            if (side > 0 && side * side == pattern.size()) {
+                List<Integer> square = new ArrayList<>(side * side);
+                for (int i = 0; i < side * side; i++) {
+                    int row = i / side, col = i % side;
+                    square.add(row < height && col < width ? row * width + col : -1);
+                }
+                encodings.add(square);
+            }
+            encodings.add(createOrderEncoding(width, height));
+
+            for (List<Integer> encoding : encodings) {
+                PatternLayout candidate = matchRecipeEncoding(recipe, pattern, encoding);
+                if (candidate == null) continue;
+                if (found != null && (matchedRegular || !matchedRecipe.id().equals(holder.id())
+                        || !samePlacement(found, candidate))) {
+                    // 包裹没有目标产物/配方 ID；不同配方或摆放结果均可解释时
+                    // 无法确认用户原本选择的产物，不能凭配方遍历顺序猜测。
+                    return null;
+                }
+                found = candidate;
+                matchedRecipe = holder;
+            }
+        }
+        return found;
     }
 
-    private static boolean matchesRawMechanicalCraftingPattern(
-            MechanicalCraftingRecipe recipe, List<BigItemStack> pattern) {
-        List<Ingredient> ingredients = recipe.getIngredients();
-        for (int index = 0; index < ingredients.size(); index++) {
-            Ingredient ingredient = ingredients.get(index);
-            ItemStack stack = pattern.get(index).stack;
-            if (ingredient.isEmpty()) {
-                if (!stack.isEmpty()) {
-                    return false;
-                }
-            } else if (stack.isEmpty() || !ingredient.test(stack)) {
-                return false;
+    /** 普通工作台配方最多 3×3；保留格位的相对位置，仅裁去外围全空的行列。 */
+    private static @Nullable PatternLayout trimRegularPattern(
+            List<BigItemStack> pattern, int width, int height) {
+        int minX = width, minY = height, maxX = -1, maxY = -1;
+        for (int i = 0; i < pattern.size(); i++) {
+            BigItemStack slot = pattern.get(i);
+            if (slot.stack.isEmpty()) continue;
+            if (slot.count <= 0) return null;
+            int x = i % width, y = i / width;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+        }
+        if (maxX < 0) return null;
+        List<BigItemStack> slots = new ArrayList<>();
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = minX; x <= maxX; x++) {
+                slots.add(pattern.get(y * width + x));
             }
+        }
+        return new PatternLayout(maxX - minX + 1, maxY - minY + 1, slots);
+    }
+
+    /** 完全重现 Create 6.0.10 FactoryPanelScreen.convertRecipeToPackageOrderContext 的格位填充。 */
+    private static List<Integer> createOrderEncoding(int width, int height) {
+        List<Integer> encoding = new ArrayList<>();
+        if (height == 1) {
+            for (int i = 0; i < 3; i++) encoding.add(-1);
+        }
+        if (width == 1) encoding.add(-1);
+        for (int i = 0; i < width * height; i++) {
+            encoding.add(i);
+            if (width < 3 && (i + 1) % width == 0) {
+                for (int j = 0; j < 3 - width && encoding.size() < 9; j++) {
+                    encoding.add(-1);
+                }
+            }
+        }
+        while (encoding.size() < 9) encoding.add(-1);
+        return encoding;
+    }
+
+    private static @Nullable PatternLayout matchRecipeEncoding(
+            MechanicalCraftingRecipe recipe, List<BigItemStack> pattern, List<Integer> encoding) {
+        if (pattern.size() != encoding.size()) return null;
+        List<Ingredient> ingredients = recipe.getIngredients();
+        List<BigItemStack> slots = new ArrayList<>(java.util.Collections.nCopies(ingredients.size(), null));
+        for (int i = 0; i < encoding.size(); i++) {
+            int slotIndex = encoding.get(i);
+            BigItemStack supplied = pattern.get(i);
+            if (slotIndex < 0) {
+                if (!supplied.stack.isEmpty()) return null;
+                continue;
+            }
+            Ingredient ingredient = ingredients.get(slotIndex);
+            if (ingredient.isEmpty()) {
+                if (!supplied.stack.isEmpty()) return null;
+            } else if (supplied.stack.isEmpty() || supplied.count <= 0 || !ingredient.test(supplied.stack)) {
+                return null;
+            }
+            slots.set(slotIndex, supplied);
+        }
+        return new PatternLayout(recipe.getWidth(), recipe.getHeight(), slots);
+    }
+
+    private static boolean samePlacement(PatternLayout first, PatternLayout other) {
+        if (first.width() != other.width() || first.height() != other.height()) return false;
+        for (int i = 0; i < first.slots().size(); i++) {
+            BigItemStack a = first.slots().get(i), b = other.slots().get(i);
+            if (a.count != b.count || !ItemStack.isSameItemSameComponents(a.stack, b.stack)) return false;
         }
         return true;
     }
 
-    private record PatternLayout(int width, int height) {
+    private record PatternLayout(int width, int height, List<BigItemStack> slots) {
     }
 
     /**
@@ -345,7 +461,7 @@ public enum BatchCrafterUnpackingHandler implements UnpackingHandler {
                 for (int row = 0; row < height; row++) {
                     for (int col = 0; col < width; col++) {
                         BatchMechanicalCrafterBlockEntity.Inventory inv = grid.get(gridKey(r0 + row, c0 + col));
-                        if (inv == null) {
+                        if (inv == null || inv.getBlockEntity().covered) {
                             valid = false;
                             break search;
                         }

@@ -47,6 +47,7 @@ public class LabeledRedstoneLinkScreen extends AbstractSimiScreen {
     private final String initialText;
     private final Consumer<String> onSave;
     private final Runnable onCloseAction;
+    private final Runnable onCancel;
 
     private FrequencyEditBox frequencyEditBox;
     private IconButton confirmButton;
@@ -56,6 +57,23 @@ public class LabeledRedstoneLinkScreen extends AbstractSimiScreen {
         this.initialText = initialText;
         this.onSave = onSave;
         this.onCloseAction = onCloseAction;
+        this.onCancel = null;
+    }
+
+    private LabeledRedstoneLinkScreen(String initialText, Consumer<String> onSave,
+                                     Runnable onCancel, Runnable onCloseAction) {
+        super(CommonComponents.EMPTY);
+        this.initialText = initialText;
+        this.onSave = onSave;
+        this.onCloseAction = onCloseAction;
+        this.onCancel = onCancel;
+    }
+
+    /** Controller editing keeps its container menu open; Escape cancels without writing either frequency type. */
+    public static void openForController(String initialText, Consumer<String> onSave,
+                                         Runnable onCancel, Runnable returnToController) {
+        Minecraft.getInstance().setScreen(new LabeledRedstoneLinkScreen(
+                initialText, onSave, onCancel, returnToController));
     }
 
     /** 真实的标码无线红石信号终端方块：打开后直接把频率保存到对应方块实体。 */
@@ -102,7 +120,7 @@ public class LabeledRedstoneLinkScreen extends AbstractSimiScreen {
         frequencyEditBox.setBordered(false);
         frequencyEditBox.setMaxLength(64);
         frequencyEditBox.setValue(initialText);
-        frequencyEditBox.setOnDefocus(this::saveCurrentFrequency);
+        frequencyEditBox.setOnDefocus(onCancel == null ? this::saveCurrentFrequency : () -> {});
         addRenderableWidget(frequencyEditBox);
     }
 
@@ -169,6 +187,11 @@ public class LabeledRedstoneLinkScreen extends AbstractSimiScreen {
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         // Esc：无论是否在编辑状态，都以当前文本退出窗口
         if (keyCode == 256) {
+            if (onCancel != null) {
+                onCancel.run();
+                onClose();
+                return true;
+            }
             if (frequencyEditBox.isFocused()) {
                 frequencyEditBox.exitEditMode(currentDefaultFrequency());
             }

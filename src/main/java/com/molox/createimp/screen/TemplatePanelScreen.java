@@ -132,13 +132,9 @@ public class TemplatePanelScreen extends AbstractSimiScreen {
      * 把一个动力合成表转换成材料列表：按左上角对齐，补齐成一个 n×n 的正方形
      * （n = max(配方宽度, 配方高度)），空位一律填充空气占位。
      * <p>
-     * 这里补齐成正方形是与批量动力合成器一侧（{@code BatchCrafterUnpackingHandler}）
-     * 的约定配套的：那一侧只能拿到这份摊平的列表本身，没有单独的"宽度"字段
-     * 可看，只能靠列表长度是不是完全平方数反推边长；如果这里不补齐、直接
-     * 按配方原始宽×高的长度传出去，配方本身不是正方形时那一侧根本无法正确
-     * 反推出边长，会按错误的边长换算行列号，导致材料摆放位置错乱。
-     * 补齐之后，配方原始内容固定摆在这个正方形的左上角，物理合成器链条
-     * 只要边长不小于这个 n 就能正确对应上，允许链条比配方本身更大。
+     * 模板仪表原有的发单格式为左上对齐的方阵，收包端依照此格式与配方逐格
+     * 比对后还原配方真实尺寸；因此这里保留方阵编码，兼容已经发出的包裹。
+     * 收包端也支持其它来源发出的原始矩形与 Create 九宫格编码。
      */
     public static List<BigItemStack> convertMechanicalRecipeToPackageOrderContext(
             MechanicalCraftingRecipe recipe, List<BigItemStack> inputs) {
